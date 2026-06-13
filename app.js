@@ -10,13 +10,15 @@ app.use(express.urlencoded({ extended: true }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const audioDir = path.join(__dirname, "public", "audio");
+const publicDir = path.join(__dirname, "public");
+const audioDir = path.join(publicDir, "audio");
 
-app.use("/audio", express.static(path.join(__dirname, "public", "audio")));
+app.use("/audio", express.static(audioDir));
 
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL || "https://express-hello-world-6bxx.onrender.com";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4-turbo";
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 
 app.get("/", (req, res) => {
   res.status(200).send("live");
@@ -44,6 +46,28 @@ function extractOpenAIText(data) {
   return parts.join(" ").trim();
 }
 
+function shortenForVoice(text) {
+  if (!text) return "Keat will confirm shortly. Would you like a callback?";
+
+  let cleaned = text
+    .replace(/\s+/g, " ")
+    .replace(/^(hi|hello|hey)[,!.\s]+/i, "")
+    .replace(
+      /^(thanks for calling|you have reached|this is willo aili|this is willo ai li)[^.!?]*[.!?]\s*/i,
+      ""
+    )
+    .trim();
+
+  const sentences = cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned];
+  cleaned = sentences.slice(0, 2).join(" ").trim();
+
+  if (cleaned.length > 140) {
+    cleaned = cleaned.slice(0, 137).trim() + "...";
+  }
+
+  return cleaned || text;
+}
+
 async function getAiReply(callerSpeech) {
   const r = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -54,7 +78,7 @@ async function getAiReply(callerSpeech) {
     body: JSON.stringify({
       model: OPENAI_MODEL,
       instructions:
-        "You are Willo AiLi, virtual assistant to Keat Paulin at Property Inside Out in Australia. You are handling a live real estate phone call. Speak naturally, warmly, and professionally in Australian English. Keep every reply short and phone-friendly, ideally one short sentence and one simple follow-up question. Help with property enquiries, inspections, callbacks, rental enquiries, buyer enquiries, seller leads, and landlord leads. Never disclose owner information. Never disclose auction prices. Never guess missing facts. If unsure, say Keat Paulin will confirm shortly. Always sound like a real estate assistant, not a generic AI bot.",
+        "You are Willo AiLi, assistant to Keat Paulin at Property Inside Out in Australia. You are already on a live phone call and the greeting has already happened. Do not say hello, hi, thanks for calling, or introduce yourself again. Only respond to what the caller just said. Speak warmly and naturally in Australian English. Keep every reply very short: maximum 12 words, then one simple follow-up question when useful. Never sound formal or robotic. Help with property enquiries, inspections, callbacks, rental enquiries, buyer enquiries, seller leads, and landlord leads. Never disclose owner information. Never disclose auction prices. Never guess missing facts. If unsure, say Keat will confirm shortly.",
       input: callerSpeech,
       temperature: 0.5,
       max_output_tokens: 35,
@@ -70,27 +94,22 @@ async function getAiReply(callerSpeech) {
     throw new Error(`OpenAI API error ${r.status}: ${JSON.stringify(data)}`);
   }
 
+  const text = extractOpenAIText(data);
+
   return (
-    extractOpenAIText(data) ||
-    "Thanks for your enquiry. Keat Paulin will confirm the details shortly. Would you like a callback?"
+    text ||
+    "Keat will confirm shortly. Would you like a callback?"
   );
 }
 
-async function createElevenLabsAudio(text, fileName) {
+async function createElevenLabsAudio(text, fileName, options = {}) {
   await fs.mkdir(audioDir, { recursive: true });
 
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
   const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY");
+  if (!ELEVENLABS_VOICE_ID) throw new Error("Missing ELEVENLABS_VOICE_ID");
 
-  if (!voiceId) {
-    throw new Error("Missing ELEVENLABS_VOICE_ID");
-  }
-
-  if (!apiKey) {
-    throw new Error("Missing ELEVENLABS_API_KEY");
-  }
-
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`;
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`;
 
   const r = await fetch(url, {
     method: "POST",
@@ -101,12 +120,12 @@ async function createElevenLabsAudio(text, fileName) {
     body: JSON.stringify({
       text,
       model_id: "eleven_multilingual_v2",
-   voice_settings: {
-  stability: 0.25,
-  similarity_boost: 0.85,
-  style: 0.2,
-  use_speaker_boost: true
-},
+      voice_settings: {
+        stability: 0.25,
+        similarity_boost: 0.85,
+        style: 0.2,
+        use_speaker_boost: true,
+      },
     }),
   });
 
@@ -121,16 +140,39 @@ async function createElevenLabsAudio(text, fileName) {
 
   await fs.writeFile(fullPath, buffer);
 
-  setTimeout(() => {
-    fs.unlink(fullPath).catch(() => {});
-  }, 10 * 60 * 1000);
+  const cleanupMs =
+    typeof options.cleanupMs === "number" ? options.cleanupMs : 10 * 60 * 1000;
+
+  if (cleanupMs > 0) {
+    setTimeout(() => {
+      fs.unlink(fullPath).catch(() => {});
+    }, cleanupMs);
+  }
 
   return `${PUBLIC_BASE_URL}/audio/${fileName}`;
 }
 
+async function ensureGreetingAudio() {
+  await fs.mkdir(audioDir, { recursive: true });
+
+  const fileName = "greeting.mp3";
+  const fullPath = path.join(audioDir, fileName);
+
+  try {
+    await fs.access(fullPath);
+    return `${PUBLIC_BASE_URL}/audio/${fileName}`;
+  } catch {
+    return await createElevenLabsAudio(
+      "Hi, Willo AiLi speaking. How can I help today?",
+      fileName,
+      { cleanupMs: 0 }
+    );
+  }
+}
+
 app.get("/test-openai", async (req, res) => {
   try {
-    const text = await getAiReply("Say exactly: OpenAI is connected.");
+    const text = await getAiReply("Tell me in five words that OpenAI is connected.");
     res.status(200).json({ ok: true, text });
   } catch (error) {
     console.error("TEST OPENAI ERROR:", error);
@@ -142,7 +184,7 @@ app.get("/test-elevenlabs", async (req, res) => {
   try {
     const fileName = `test-${Date.now()}.mp3`;
     const audioUrl = await createElevenLabsAudio(
-      "Hello, this is Willo AiLi at Property Inside Out. ElevenLabs is connected.",
+      "Hi, Willo AiLi speaking. ElevenLabs is connected.",
       fileName
     );
 
@@ -154,40 +196,70 @@ app.get("/test-elevenlabs", async (req, res) => {
 });
 
 app.all("/webhooks/answer", async (req, res) => {
-  res.status(200).json([
-    {
-      action: "talk",
-      text: "Hi, this is Willo AiLi at Property Inside Out. How can I help today?",
-      bargeIn: true,
-    },
-    {
-      action: "input",
-      type: ["speech"],
-      speech: {
-        language: "en-AU",
-        endOnSilence: 1,
+  try {
+    const greetingUrl = await ensureGreetingAudio();
+
+    res.status(200).json([
+      {
+        action: "stream",
+        streamUrl: [greetingUrl],
       },
-      eventUrl: [`${PUBLIC_BASE_URL}/webhooks/input`],
-    },
-  ]);
+      {
+        action: "input",
+        type: ["speech"],
+        speech: {
+          language: "en-AU",
+          endOnSilence: 1,
+        },
+        eventUrl: [`${PUBLIC_BASE_URL}/webhooks/input`],
+      },
+    ]);
+  } catch (error) {
+    console.error("ANSWER FLOW ERROR:", error);
+
+    res.status(200).json([
+      {
+        action: "talk",
+        text: "Hi, Willo AiLi speaking. How can I help today?",
+      },
+      {
+        action: "input",
+        type: ["speech"],
+        speech: {
+          language: "en-AU",
+          endOnSilence: 1,
+        },
+        eventUrl: [`${PUBLIC_BASE_URL}/webhooks/input`],
+      },
+    ]);
+  }
 });
 
 app.all("/webhooks/input", async (req, res) => {
   try {
-    console.log("INPUT HIT", req.method, req.body);
+    console.log("INPUT HIT", req.method, JSON.stringify(req.body));
 
     const callerSpeech =
       req.body?.speech?.results?.[0]?.text ||
       req.body?.speech?.text ||
-      "The caller did not say anything.";
+      "";
 
     console.log("CALLER SAID:", callerSpeech);
 
-    const aiReply = await getAiReply(callerSpeech);
-    console.log("AI REPLY:", aiReply);
+    let replyText;
+
+    if (!callerSpeech.trim()) {
+      replyText = "Sorry, could you say that again?";
+    } else {
+      const aiReply = await getAiReply(callerSpeech);
+      replyText = shortenForVoice(aiReply);
+    }
+
+    console.log("VOICE REPLY:", replyText);
 
     const fileName = `reply-${Date.now()}.mp3`;
-    const audioUrl = await createElevenLabsAudio(aiReply, fileName);
+    const audioUrl = await createElevenLabsAudio(replyText, fileName);
+
     console.log("AUDIO URL:", audioUrl);
 
     res.status(200).json([
@@ -210,8 +282,14 @@ app.all("/webhooks/input", async (req, res) => {
 
     res.status(200).json([
       {
+        action: "stream",
+        streamUrl: [
+          `${PUBLIC_BASE_URL}/audio/greeting.mp3`,
+        ],
+      },
+      {
         action: "talk",
-        text: "Sorry, I am having trouble right now. Keat Paulin will follow up shortly.",
+        text: "Sorry, I am having trouble right now. Keat will follow up shortly.",
       },
     ]);
   }
