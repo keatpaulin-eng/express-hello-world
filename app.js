@@ -29,6 +29,7 @@ app.get("/test-openai", async (req, res) => {
     });
 
     const data = await r.json();
+
     console.log("OPENAI STATUS:", r.status);
     console.log("OPENAI DATA:", JSON.stringify(data));
 
@@ -47,7 +48,7 @@ app.all("/webhooks/answer", (req, res) => {
   res.status(200).json([
     {
       action: "talk",
-      text: "Hello, you have reached Willo AiLi at Property Inside Out. This is a connection test."
+      text: "Hello, this is a connection test."
     }
   ]);
 });
