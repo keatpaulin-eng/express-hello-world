@@ -1,54 +1,34 @@
-import express from "express";
-import http from "http";
-import WebSocket, { WebSocketServer } from "ws";
-
+const express = require("express");
 const app = express();
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
-  res.send("AI Voice Bridge running");
+  res.status(200).send("live");
 });
 
-app.post("/webhooks/answer", (req, res) => {
-  const ncco = [
-    { action: "talk", text: "Hello, please speak. This call is now connected." },
+app.get("/health", (req, res) => {
+  res.status(200).send("ok");
+});
+
+app.all("/webhooks/answer", (req, res) => {
+  console.log("ANSWER HIT", req.method, req.query, req.body);
+  res.setHeader("Content-Type", "application/json");
+  res.status(200).json([
     {
-      action: "connect",
-      endpoint: [
-        {
-          type: "websocket",
-          uri: `wss://${req.headers.host}/ws`,
-          contentType: "audio/l16;rate=16000",
-          headers: { "X-Source": "vonage" }
-        }
-      ]
+      action: "talk",
+      text: "Hello. This is a test call. Your Vonage connection is working."
     }
-  ];
-  res.json(ncco);
+  ]);
 });
 
-app.post("/webhooks/events", (req, res) => {
-  console.log("Vonage event:", req.body);
-  res.sendStatus(200);
+app.all("/webhooks/events", (req, res) => {
+  console.log("EVENT HIT", req.method, req.query, req.body);
+  res.status(200).send("ok");
 });
 
-const server = http.createServer(app);
-
-const wss = new WebSocketServer({ server, path: "/ws" });
-
-wss.on("connection", (ws) => {
-  console.log("🔌 Vonage WebSocket connected");
-
-  ws.on("message", (audio) => {
-    ws.send(audio); // echo test
-  });
-
-  ws.on("close", () => {
-    console.log("❌ Vonage WebSocket disconnected");
-  });
-});
-
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server listening on ${PORT}`);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Listening on port ${port}`);
 });
