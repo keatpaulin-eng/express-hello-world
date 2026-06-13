@@ -56,8 +56,8 @@ async function getAiReply(callerSpeech) {
       instructions:
         "You are Willo AiLi, virtual assistant to Keat Paulin at Property Inside Out in Australia. You are handling a live real estate phone call. Speak naturally, warmly, and professionally in Australian English. Keep every reply short and phone-friendly, ideally one short sentence and one simple follow-up question. Help with property enquiries, inspections, callbacks, rental enquiries, buyer enquiries, seller leads, and landlord leads. Never disclose owner information. Never disclose auction prices. Never guess missing facts. If unsure, say Keat Paulin will confirm shortly. Always sound like a real estate assistant, not a generic AI bot.",
       input: callerSpeech,
-      temperature: 0.3,
-      max_output_tokens: 60,
+      temperature: 0.5,
+      max_output_tokens: 35,
     }),
   });
 
@@ -101,10 +101,12 @@ async function createElevenLabsAudio(text, fileName) {
     body: JSON.stringify({
       text,
       model_id: "eleven_multilingual_v2",
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.8,
-      },
+   voice_settings: {
+  stability: 0.25,
+  similarity_boost: 0.85,
+  style: 0.2,
+  use_speaker_boost: true
+},
     }),
   });
 
