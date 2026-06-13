@@ -1,4 +1,5 @@
-const express = require("express");
+import express from "express";
+
 const app = express();
 
 app.use(express.json());
@@ -14,7 +15,6 @@ app.get("/health", (req, res) => {
 
 app.all("/webhooks/answer", (req, res) => {
   console.log("ANSWER HIT", req.method, req.query, req.body);
-  res.setHeader("Content-Type", "application/json");
   res.status(200).json([
     {
       action: "talk",
