@@ -22,7 +22,7 @@ app.get("/test-openai", async (req, res) => {
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4.1",
+        model: "gpt-4-turbo",
         instructions: "Reply with exactly: OpenAI is connected.",
         input: "Test connection"
       })
