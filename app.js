@@ -59,7 +59,7 @@ async function getAiReply(callerSpeech) {
   AGENCY INFORMATION:
   - Name: Property Inside Out (Castle Hill Office)
   - Address: 10/6-8 Old Castle Hill Rd, Castle Hill NSW 2154
-  - Phone: 1800 467 433
+  - Phone: 0401 021 678
   - Principal / Director: Keat Paulin
 
   ACTIVE FEATURED LISTINGS:
