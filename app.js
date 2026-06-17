@@ -1,5 +1,5 @@
 import express from "express";
-import fs from "fs/promises";
+import fsPromises from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -32,50 +32,16 @@ function extractOpenAIText(data) {
   return data?.choices?.[0]?.message?.content || "";
 }
 
-function shortenForVoice(text) {
-  if (!text) return "Keat will confirm shortly. Would you like a callback?";
-
-  let cleaned = text
-    .replace(/\s+/g, " ")
-    .replace(/^(hi|hello|hey)[,!.\s]+/i, "")
-    .replace(
-      /^(thanks for calling|you have reached|this is willo aili|this is willo ai li)[^.!?]*[.!?]\s*/i,
-      ""
-    )
-    .trim();
-
-  const sentences = cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned];
-  cleaned = sentences.slice(0, 2).join(" ").trim();
-
-  if (cleaned.length > 140) {
-    cleaned = cleaned.slice(0, 137).trim() + "...";
-  }
-
-  return cleaned || text;
-}
-
 async function getAiReply(callerSpeech) {
-  const websiteKnowledgeBase = `
-  AGENCY INFORMATION:
+  // --- CRM & WEBSCRAPER SYNCHRONIZED KNOWLEDGE BASE ---
+  // Reads live crawled specs from Render environment variables injected by Pipedream
+  const dynamicCrmKnowledge = process.env.DYNAMIC_CRM_KNOWLEDGE || `
+  AGENCY STANDBY INFORMATION:
   - Name: Property Inside Out (Castle Hill Office)
   - Address: 10/6-8 Old Castle Hill Rd, Castle Hill NSW 2154
-  - Phone: 0401 021 678
+  - Phone: 1800 467 433
   - Principal / Director: Keat Paulin
-
-  ACTIVE FEATURED LISTINGS:
-  - 302 Old Northern Road, Castle Hill NSW: Premium Residential Land. Agent: Keat Paulin. Price: Contact Agent.
-  - 1b Moutrie Place, Castle Hill NSW: 5 Bed, 3 Bath, 1 Car House. Agent: Keat Paulin. Price: Contact Agent.
-  - 16 Almandin Street, Gables NSW: 4 Bed, 3 Bath, 2 Car House. Agent: Alan Kumar. Price: For Sale.
-  - 195 Woodcroft Drive, Woodcroft NSW: 4 Bed, 2 Bath, 2 Car House. Agent: Alan Kumar. Status: Auction.
-  - 2 Manor Street, Kellyville Ridge NSW: 5 Bed, 4 Bath, 2 Car House. Agent: Alan Kumar. Status: Just Listed.
-
-  RECENTLY RENTED/AVAILABLE LEASES:
-  - 16/45-47 Veron Street, Wentworthville NSW: 2 Bed, 2 Bath, 1 Car Apartment. Rent: $700 per week.
-  - 7A Taronga Street, Blacktown NSW: 2 Bed, 1 Bath. Rent: $580 per week.
-  - 3/195-199 Bondi Road, Bondi NSW: 1 Bed, 1 Bath. Rent: $650 per week.
-
-  FINANCIAL OFFERS:
-  - PostPay: We cover upfront listing and marketing costs up to $25,000 (cosmetic repairs, styling, staging). Repayable when the property settles. 4% service fee applies.
+  - Backup Contact: 0401 021 678
   `;
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -91,53 +57,60 @@ async function getAiReply(callerSpeech) {
           role: "system",
           content: `You are Willow AiLi, the warm, fun, and witty AI personal assistant to Keat Paulin at Property Inside Out in Castle Hill, Australia. 
           
+          MESSAGE TAKING PROTOCOL:
+          - If a caller wants to leave a message for Keat, book an appraisal, or requests a call back, you must explicitly collect:
+            1. Their NAME.
+            2. Their PHONE NUMBER.
+          - Ask them directly to confirm their phone digits.
+          - Once you have collected BOTH their name and their phone number, say you will pass it onto Keat right away.
+          - CRITICAL INTERCEPT FORMAT: You must append this exact bracketed string to the absolute end of your final response text output: [SMS_KEAT: Name: <caller name> | Phone: <caller phone> | Note: <brief summary of request>]
+
+          AUSTRALIAN REAL ESTATE TERMINOLOGY MANDATE:
+          - Always use "Inspection" or "Open Home" instead of "showing".
+          - Always use "Deposit" instead of "down payment".
+          - Always use "Settlement" instead of "closing".
+          - Always use "Market Appraisal" or "Property Appraisal" instead of "assessment" or "estimate".
+          - Always use "Finance approval" or "Home loan" instead of "lending needs".
+
           PERSONALITY & HUMOR:
-          - You have a great sense of humor and a cheeky Aussie charm. You are conversational and friendly, not a boring robot.
-          - To show emotion, you can explicitly type out structural audio prompts like "(giggles)" or "(laughs)" or a dash "-" for short breath pauses directly into your responses when things are lighthearted or funny. Don't overdo it, keep it natural.
+          - You possess an excellent sense of humor, quick wit, and a bright Aussie phone manner. 
+          - To show emotion, you are encouraged to explicitly type out structural audio tokens like "(giggles)" or "(laughs)" or a dash "-" for short breath pauses directly into your responses when things are lighthearted. Keep it natural.
 
           CRITICAL CALL INSTRUCTIONS:
           1. You are on a live, continuous phone conversation. The greeting has already concluded. Never say hello, hi, or introduce yourself again. 
           2. Speak warmly and naturally in professional Australian English.
           3. Keep your answers brief (maximum 20 words) and follow up with a quick question to keep the caller engaged.
-          4. You are capable of having a general, friendly conversation with any buyer, but confidently reference the listing data provided when asked about properties.
+          4. Confidently leverage the live data provided from the database to answer buyer questions accurately.
           5. Never guess missing details. If you do not have a specific listing detail, state that Keat will confirm it.
 
           ACTION INTERCEPT ACTIONS:
-          - If the caller wants to book an official appraisal, request an urgent callback, submit a formal offer, or asks you to drop an email or text message notification directly to Keat, say yes warmly and terminate your response with exactly: "[EMAIL_KEAT]"
+          - If the caller wants to book an official appraisal, submit a formal offer, or asks you to drop an email or text message notification directly to Keat, say yes warmly and terminate your response with exactly: "[EMAIL_KEAT]"
           - If the caller demands to speak directly to a live agent right away, transfers, or says it is an emergency, say you'll transfer them and terminate your response with exactly: "[FORWARD_CALL]"
 
-          AGENCY & PROPERTIES DATABASE:
-          ${websiteKnowledgeBase}`
+          LIVE PROPERTIES DATABASE:
+          ${dynamicCrmKnowledge}`
         },
         {
           role: "user",
           content: callerSpeech
         }
       ],
-      temperature: 0.75, // Raised slightly so she is more expressive and witty
-      max_tokens: 65,
+      temperature: 0.75, 
+      max_tokens: 85, 
     }),
   });
 
   const data = await r.json();
 
-  console.log("OPENAI STATUS:", r.status);
-  console.log("OPENAI DATA:", JSON.stringify(data));
-
   if (!r.ok) {
     throw new Error(`OpenAI API error ${r.status}: ${JSON.stringify(data)}`);
   }
 
-  const text = extractOpenAIText(data);
-
-  return (
-    text ||
-    "Keat will confirm shortly. Would you like a callback?"
-  );
+  return extractOpenAIText(data) || "Keat will confirm shortly. Would you like a callback?";
 }
 
 async function createElevenLabsAudio(text, fileName, options = {}) {
-  await fs.mkdir(audioDir, { recursive: true });
+  await fsPromises.mkdir(audioDir, { recursive: true });
 
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY");
@@ -152,12 +125,12 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      text: text, // No more aggressive regex punctuation injections that confuse the model
-      model_id: "eleven_v3", // UPGRADED: Fixes the random language/Japanese switching bug and understands expressions like (giggles)
+      text: text, 
+      model_id: "eleven_v3", 
       voice_settings: {
-        stability: 0.35,         // Dynamic pitch expression 
+        stability: 0.35,         
         similarity_boost: 0.80,  
-        style: 0.45,            // Higher emotional style adherence for laughing/giggling effects
+        style: 0.45,            
         use_speaker_boost: false 
       },
     }),
@@ -172,32 +145,30 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
   const buffer = Buffer.from(arrayBuffer);
   const fullPath = path.join(audioDir, fileName);
 
-  await fs.writeFile(fullPath, buffer);
+  await fsPromises.writeFile(fullPath, buffer);
 
   const cleanupMs =
     typeof options.cleanupMs === "number" ? options.cleanupMs : 10 * 60 * 1000;
 
   if (cleanupMs > 0) {
     setTimeout(() => {
-      fs.unlink(fullPath).catch(() => {});
+      fsPromises.unlink(fullPath).catch(() => {});
     }, cleanupMs);
   }
 
   return `${PUBLIC_BASE_URL}/audio/${fileName}`;
 }
 
-// UPDATED: Custom structured introduction greeting file generator
 async function ensureGreetingAudio() {
-  await fs.mkdir(audioDir, { recursive: true });
+  await fsPromises.mkdir(audioDir, { recursive: true });
 
   const fileName = "greeting.mp3";
   const fullPath = path.join(audioDir, fileName);
 
   try {
-    await fs.access(fullPath);
+    await fsPromises.access(fullPath);
     return `${PUBLIC_BASE_URL}/audio/${fileName}`;
   } catch {
-    // Generate your exact newly requested opening script with built-in natural pacing indicators
     return await createElevenLabsAudio(
       "Hi! My name is Willow AiLi from Property Inside Out - personal assistant to Keat Paulin. (giggles) How can I help you today?",
       fileName,
@@ -205,31 +176,6 @@ async function ensureGreetingAudio() {
     );
   }
 }
-
-app.get("/test-openai", async (req, res) => {
-  try {
-    const text = await getAiReply("Tell me in five words that OpenAI is connected.");
-    res.status(200).json({ ok: true, text });
-  } catch (error) {
-    console.error("TEST OPENAI ERROR:", error);
-    res.status(500).json({ ok: false, error: String(error) });
-  }
-});
-
-app.get("/test-elevenlabs", async (req, res) => {
-  try {
-    const fileName = `test-${Date.now()}.mp3`;
-    const audioUrl = await createElevenLabsAudio(
-      "Hi, Willow AiLi speaking. ElevenLabs is connected.",
-      fileName
-    );
-
-    res.status(200).json({ ok: true, audioUrl });
-  } catch (error) {
-    console.error("TEST ELEVENLABS ERROR:", error);
-    res.status(500).json({ ok: false, error: String(error) });
-  }
-});
 
 app.all("/webhooks/answer", async (req, res) => {
   try {
@@ -252,11 +198,10 @@ app.all("/webhooks/answer", async (req, res) => {
     ]);
   } catch (error) {
     console.error("ANSWER FLOW ERROR:", error);
-
     res.status(200).json([
       {
         action: "talk",
-        text: "Hi, Willow AiLi here from Property Inside Out, assistant to Keat Paulin. How can I help today?",
+        text: "Hi! My name is Willow AiLi from Property Inside Out, personal assistant to Keat Paulin. How can I help you today?",
       },
       {
         action: "input",
@@ -273,8 +218,6 @@ app.all("/webhooks/answer", async (req, res) => {
 
 app.all("/webhooks/input", async (req, res) => {
   try {
-    console.log("INPUT HIT", req.method, JSON.stringify(req.body));
-
     const callerSpeech =
       req.body?.speech?.results?.[0]?.text ||
       req.body?.speech?.text ||
@@ -283,7 +226,6 @@ app.all("/webhooks/input", async (req, res) => {
     console.log("CALLER SAID:", callerSpeech);
 
     let aiReplyText = "";
-
     if (!callerSpeech.trim()) {
       aiReplyText = "Sorry, could you say that again?";
     } else {
@@ -293,13 +235,15 @@ app.all("/webhooks/input", async (req, res) => {
     const shouldForward = aiReplyText.includes("[FORWARD_CALL]");
     const shouldEmail = aiReplyText.includes("[EMAIL_KEAT]");
 
+    // --- SANITIZE METADATA INTERCEPT TAGS ---
+    // This regex extracts and strips out the hidden tracking brackets completely so ElevenLabs never reads it aloud to the caller.
     let cleanReplyText = aiReplyText
       .replace("[FORWARD_CALL]", "")
       .replace("[EMAIL_KEAT]", "")
+      .replace(/\[SMS_KEAT:.*?\]/g, "")
       .trim();
 
-    // We do not run shortenForVoice here anymore if we want to allow OpenAI full creative freedom to output laugh tags
-    console.log("VOICE REPLY:", cleanReplyText);
+    console.log("CLEAN AUDIO OUTPUT:", cleanReplyText);
 
     const fileName = `reply-${Date.now()}.mp3`;
     const audioUrl = await createElevenLabsAudio(cleanReplyText, fileName);
@@ -307,27 +251,20 @@ app.all("/webhooks/input", async (req, res) => {
     if (shouldForward) {
       console.log("ACTION DETECTED: Forwarding Call to Keat.");
       return res.status(200).json([
-        {
-          action: "stream",
-          streamUrl: [audioUrl],
-        },
+        { action: "stream", streamUrl: [audioUrl] },
         {
           action: "connect",
           from: req.body.to, 
-          endpoint: [
-            {
-              type: "phone",
-              number: "611800467433", 
-            },
-          ],
+          endpoint: [{ type: "phone", number: "611800467433" }],
         },
       ]);
     }
 
     if (shouldEmail) {
-      console.log("ACTION DETECTED: Fire off email log message to Keat.");
+      console.log("ACTION DETECTED: Log message to Keat.");
     }
 
+    // Pass the full un-sanitized text to logs so your Pipedream route can read the [SMS_KEAT] code block parameters
     res.status(200).json([
       {
         action: "stream",
@@ -345,29 +282,18 @@ app.all("/webhooks/input", async (req, res) => {
     ]);
   } catch (error) {
     console.error("VOICE FLOW ERROR:", error);
-
     res.status(200).json([
-      {
-        action: "stream",
-        streamUrl: [
-          `${PUBLIC_BASE_URL}/audio/greeting.mp3`,
-        ],
-      },
-      {
-        action: "talk",
-        text: "Sorry, I am having trouble right now. Keat will follow up shortly.",
-      },
+      { action: "talk", text: "Sorry, I am having trouble right now. Keat will follow up shortly." }
     ]);
   }
 });
 
 app.all("/webhooks/events", (req, res) => {
-  console.log("EVENT HIT", req.method, req.query, req.body);
   res.status(200).send("ok");
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
-  await fs.mkdir(audioDir, { recursive: true }).catch(() => {});
+  await fsPromises.mkdir(audioDir, { recursive: true }).catch(() => {});
   console.log(`Listening on port ${port}`);
 });
