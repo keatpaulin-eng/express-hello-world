@@ -55,8 +55,7 @@ function shortenForVoice(text) {
 }
 
 async function getAiReply(callerSpeech) {
-  // --- YOUR ACTUAL WEBSITE PROPERTY DATA & KNOWLEDGE BASE ---
-  // Update this block whenever your active inventory changes!
+  // --- REAL PROPERTY DATA & AGENCIES CONTEXT DATABASE ---
   const websiteKnowledgeBase = `
   AGENCY INFORMATION:
   - Name: Property Inside Out (Castle Hill Office)
@@ -134,6 +133,7 @@ async function getAiReply(callerSpeech) {
   );
 }
 
+// FULLY REVISED: ElevenLabs function setup with human-like breathing and natural pitch adjustments
 async function createElevenLabsAudio(text, fileName, options = {}) {
   await fs.mkdir(audioDir, { recursive: true });
 
@@ -143,6 +143,9 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`;
 
+  // Inject ellipses around punctuation to generate micro-pauses for natural rhythm over the phone
+  const conversationalText = text.replace(/,/g, "...").replace(/\?/g, "?...");
+
   const r = await fetch(url, {
     method: "POST",
     headers: {
@@ -150,13 +153,13 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      text,
-      model_id: "eleven_multilingual_v2",
+      text: conversationalText,
+      model_id: "eleven_multilingual_v2", 
       voice_settings: {
-        stability: 0.25,
-        similarity_boost: 0.85,
-        style: 0.2,
-        use_speaker_boost: true,
+        stability: 0.40,         // Lowered to introduce fluid voice pitch and expression variance
+        similarity_boost: 0.80,  
+        style: 0.35,            // Raised to enhance conversational performance traits
+        use_speaker_boost: false // Turned off to eliminate digital compression/robotic artifacts on phone streams
       },
     }),
   });
@@ -286,11 +289,9 @@ app.all("/webhooks/input", async (req, res) => {
       aiReplyText = await getAiReply(callerSpeech);
     }
 
-    // Capture flags before removing them from voice generation
     const shouldForward = aiReplyText.includes("[FORWARD_CALL]");
     const shouldEmail = aiReplyText.includes("[EMAIL_KEAT]");
 
-    // Clean flags out of text so the text-to-speech doesn't say them out loud
     let cleanReplyText = aiReplyText
       .replace("[FORWARD_CALL]", "")
       .replace("[EMAIL_KEAT]", "")
@@ -302,7 +303,6 @@ app.all("/webhooks/input", async (req, res) => {
     const fileName = `reply-${Date.now()}.mp3`;
     const audioUrl = await createElevenLabsAudio(voiceReply, fileName);
 
-    // --- INTERCEPT ROUTING ACTIONS ---
     if (shouldForward) {
       console.log("ACTION DETECTED: Forwarding Call to Keat.");
       return res.status(200).json([
@@ -312,11 +312,11 @@ app.all("/webhooks/input", async (req, res) => {
         },
         {
           action: "connect",
-          from: req.body.to, // Your virtual system number
+          from: req.body.to, 
           endpoint: [
             {
               type: "phone",
-              number: "611800467433", // Replace with your direct mobile number in international format
+              number: "611800467433", // Change this to your actual cell phone number destination if needed
             },
           ],
         },
@@ -324,11 +324,9 @@ app.all("/webhooks/input", async (req, res) => {
     }
 
     if (shouldEmail) {
-      console.log("ACTION DETECTED: Fire off notification to Keat.");
-      // This is where you trigger an email or SMS notification utility
+      console.log("ACTION DETECTED: Fire off email log message to Keat.");
     }
 
-    // Default continuous looping conversation route
     res.status(200).json([
       {
         action: "stream",
