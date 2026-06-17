@@ -28,7 +28,6 @@ app.get("/health", (req, res) => {
   res.status(200).send("ok");
 });
 
-// FIXED: Cleaned up to correctly target standard OpenAI JSON layout
 function extractOpenAIText(data) {
   return data?.choices?.[0]?.message?.content || "";
 }
@@ -55,8 +54,32 @@ function shortenForVoice(text) {
   return cleaned || text;
 }
 
-// FIXED: Corrected endpoint, mapping, parameters, and layout for Chat Completions
 async function getAiReply(callerSpeech) {
+  // --- YOUR ACTUAL WEBSITE PROPERTY DATA & KNOWLEDGE BASE ---
+  // Update this block whenever your active inventory changes!
+  const websiteKnowledgeBase = `
+  AGENCY INFORMATION:
+  - Name: Property Inside Out (Castle Hill Office)
+  - Address: 10/6-8 Old Castle Hill Rd, Castle Hill NSW 2154
+  - Phone: 1800 467 433
+  - Principal / Director: Keat Paulin
+
+  ACTIVE FEATURED LISTINGS:
+  - 302 Old Northern Road, Castle Hill NSW: Premium Residential Land. Agent: Keat Paulin. Price: Contact Agent.
+  - 1b Moutrie Place, Castle Hill NSW: 5 Bed, 3 Bath, 1 Car House. Agent: Keat Paulin. Price: Contact Agent.
+  - 16 Almandin Street, Gables NSW: 4 Bed, 3 Bath, 2 Car House. Agent: Alan Kumar. Price: For Sale.
+  - 195 Woodcroft Drive, Woodcroft NSW: 4 Bed, 2 Bath, 2 Car House. Agent: Alan Kumar. Status: Auction.
+  - 2 Manor Street, Kellyville Ridge NSW: 5 Bed, 4 Bath, 2 Car House. Agent: Alan Kumar. Status: Just Listed.
+
+  RECENTLY RENTED/AVAILABLE LEASES:
+  - 16/45-47 Veron Street, Wentworthville NSW: 2 Bed, 2 Bath, 1 Car Apartment. Rent: $700 per week.
+  - 7A Taronga Street, Blacktown NSW: 2 Bed, 1 Bath. Rent: $580 per week.
+  - 3/195-199 Bondi Road, Bondi NSW: 1 Bed, 1 Bath. Rent: $650 per week.
+
+  FINANCIAL OFFERS:
+  - PostPay: We cover upfront listing and marketing costs up to $25,000 (cosmetic repairs, styling, staging). Repayable when the property settles. 4% service fee applies.
+  `;
+
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -68,15 +91,29 @@ async function getAiReply(callerSpeech) {
       messages: [
         {
           role: "system",
-          content: "You are Willo AiLi, assistant to Keat Paulin at Property Inside Out in Australia. You are already on a live phone call and the greeting has already happened. Do not say hello, hi, thanks for calling, or introduce yourself again. Only respond to what the caller just said. Speak warmly and naturally in Australian English. Keep every reply very short: maximum 12 words, then one simple follow-up question when useful. Never sound formal or robotic. Help with property enquiries, inspections, callbacks, rental enquiries, buyer enquiries, seller leads, and landlord leads. Never disclose owner information. Never disclose auction prices. Never guess missing facts. If unsure, say Keat will confirm shortly."
+          content: `You are Willow AiLi, the warm and professional AI personal assistant to Keat Paulin at Property Inside Out in Castle Hill, Australia. 
+          
+          CRITICAL INSTRUCTIONS:
+          1. You are on a live, continuous phone conversation. The greeting has already concluded. Never say hello, hi, or introduce yourself again. 
+          2. Speak warmly and naturally in professional Australian English.
+          3. Keep your answers extremely brief (maximum 15 words) and follow up with an immediate short question to keep the caller engaged.
+          4. You are capable of having a general, friendly conversation with any buyer, but confidently reference the listing data provided when asked about properties.
+          5. Never guess missing details, disclose private owner profiles, or guess auction reserve pricing. If you do not have a specific listing detail, state that Keat will confirm it.
+
+          ACTION INTERCEPT ACTIONS:
+          - If the caller wants to book an official appraisal, request an urgent callback, submit a formal offer, or asks you to drop an email or text message notification directly to Keat, say yes warmly and terminate your response with exactly: "[EMAIL_KEAT]"
+          - If the caller demands to speak directly to a live agent right away, transfers, or says it is an emergency, say you'll transfer them and terminate your response with exactly: "[FORWARD_CALL]"
+
+          AGENCY & PROPERTIES DATABASE:
+          ${websiteKnowledgeBase}`
         },
         {
           role: "user",
           content: callerSpeech
         }
       ],
-      temperature: 0.5,
-      max_tokens: 35,
+      temperature: 0.6,
+      max_tokens: 55,
     }),
   });
 
@@ -158,7 +195,7 @@ async function ensureGreetingAudio() {
     return `${PUBLIC_BASE_URL}/audio/${fileName}`;
   } catch {
     return await createElevenLabsAudio(
-      "Hi, Willo AiLi speaking. How can I help today?",
+      "Hi, Willow AiLi speaking. How can I help today?",
       fileName,
       { cleanupMs: 0 }
     );
@@ -179,7 +216,7 @@ app.get("/test-elevenlabs", async (req, res) => {
   try {
     const fileName = `test-${Date.now()}.mp3`;
     const audioUrl = await createElevenLabsAudio(
-      "Hi, Willo AiLi speaking. ElevenLabs is connected.",
+      "Hi, Willow AiLi speaking. ElevenLabs is connected.",
       fileName
     );
 
@@ -215,7 +252,7 @@ app.all("/webhooks/answer", async (req, res) => {
     res.status(200).json([
       {
         action: "talk",
-        text: "Hi, Willo AiLi speaking. How can I help today?",
+        text: "Hi, Willow AiLi speaking. How can I help today?",
       },
       {
         action: "input",
@@ -241,22 +278,57 @@ app.all("/webhooks/input", async (req, res) => {
 
     console.log("CALLER SAID:", callerSpeech);
 
-    let replyText;
+    let aiReplyText = "";
 
     if (!callerSpeech.trim()) {
-      replyText = "Sorry, could you say that again?";
+      aiReplyText = "Sorry, could you say that again?";
     } else {
-      const aiReply = await getAiReply(callerSpeech);
-      replyText = shortenForVoice(aiReply);
+      aiReplyText = await getAiReply(callerSpeech);
     }
 
-    console.log("VOICE REPLY:", replyText);
+    // Capture flags before removing them from voice generation
+    const shouldForward = aiReplyText.includes("[FORWARD_CALL]");
+    const shouldEmail = aiReplyText.includes("[EMAIL_KEAT]");
+
+    // Clean flags out of text so the text-to-speech doesn't say them out loud
+    let cleanReplyText = aiReplyText
+      .replace("[FORWARD_CALL]", "")
+      .replace("[EMAIL_KEAT]", "")
+      .trim();
+
+    const voiceReply = shortenForVoice(cleanReplyText);
+    console.log("VOICE REPLY:", voiceReply);
 
     const fileName = `reply-${Date.now()}.mp3`;
-    const audioUrl = await createElevenLabsAudio(replyText, fileName);
+    const audioUrl = await createElevenLabsAudio(voiceReply, fileName);
 
-    console.log("AUDIO URL:", audioUrl);
+    // --- INTERCEPT ROUTING ACTIONS ---
+    if (shouldForward) {
+      console.log("ACTION DETECTED: Forwarding Call to Keat.");
+      return res.status(200).json([
+        {
+          action: "stream",
+          streamUrl: [audioUrl],
+        },
+        {
+          action: "connect",
+          from: req.body.to, // Your virtual system number
+          endpoint: [
+            {
+              type: "phone",
+              number: "611800467433", // Replace with your direct mobile number in international format
+            },
+          ],
+        },
+      ]);
+    }
 
+    if (shouldEmail) {
+      console.log("ACTION DETECTED: Fire off notification to Keat.");
+      // This is where you trigger an email or SMS notification utility
+    }
+
+    // Default continuous looping conversation route
     res.status(200).json([
       {
         action: "stream",
