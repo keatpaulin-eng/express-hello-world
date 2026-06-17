@@ -55,7 +55,6 @@ function shortenForVoice(text) {
 }
 
 async function getAiReply(callerSpeech) {
-  // --- REAL PROPERTY DATA & AGENCIES CONTEXT DATABASE ---
   const websiteKnowledgeBase = `
   AGENCY INFORMATION:
   - Name: Property Inside Out (Castle Hill Office)
@@ -90,14 +89,18 @@ async function getAiReply(callerSpeech) {
       messages: [
         {
           role: "system",
-          content: `You are Willow AiLi, the warm and professional AI personal assistant to Keat Paulin at Property Inside Out in Castle Hill, Australia. 
+          content: `You are Willow AiLi, the warm, fun, and witty AI personal assistant to Keat Paulin at Property Inside Out in Castle Hill, Australia. 
           
-          CRITICAL INSTRUCTIONS:
+          PERSONALITY & HUMOR:
+          - You have a great sense of humor and a cheeky Aussie charm. You are conversational and friendly, not a boring robot.
+          - To show emotion, you can explicitly type out structural audio prompts like "(giggles)" or "(laughs)" or a dash "-" for short breath pauses directly into your responses when things are lighthearted or funny. Don't overdo it, keep it natural.
+
+          CRITICAL CALL INSTRUCTIONS:
           1. You are on a live, continuous phone conversation. The greeting has already concluded. Never say hello, hi, or introduce yourself again. 
           2. Speak warmly and naturally in professional Australian English.
-          3. Keep your answers extremely brief (maximum 15 words) and follow up with an immediate short question to keep the caller engaged.
+          3. Keep your answers brief (maximum 20 words) and follow up with a quick question to keep the caller engaged.
           4. You are capable of having a general, friendly conversation with any buyer, but confidently reference the listing data provided when asked about properties.
-          5. Never guess missing details, disclose private owner profiles, or guess auction reserve pricing. If you do not have a specific listing detail, state that Keat will confirm it.
+          5. Never guess missing details. If you do not have a specific listing detail, state that Keat will confirm it.
 
           ACTION INTERCEPT ACTIONS:
           - If the caller wants to book an official appraisal, request an urgent callback, submit a formal offer, or asks you to drop an email or text message notification directly to Keat, say yes warmly and terminate your response with exactly: "[EMAIL_KEAT]"
@@ -111,8 +114,8 @@ async function getAiReply(callerSpeech) {
           content: callerSpeech
         }
       ],
-      temperature: 0.6,
-      max_tokens: 55,
+      temperature: 0.75, // Raised slightly so she is more expressive and witty
+      max_tokens: 65,
     }),
   });
 
@@ -133,7 +136,6 @@ async function getAiReply(callerSpeech) {
   );
 }
 
-// FULLY REVISED: ElevenLabs function setup with human-like breathing and natural pitch adjustments
 async function createElevenLabsAudio(text, fileName, options = {}) {
   await fs.mkdir(audioDir, { recursive: true });
 
@@ -143,9 +145,6 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`;
 
-  // Inject ellipses around punctuation to generate micro-pauses for natural rhythm over the phone
-  const conversationalText = text.replace(/,/g, "...").replace(/\?/g, "?...");
-
   const r = await fetch(url, {
     method: "POST",
     headers: {
@@ -153,13 +152,13 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      text: conversationalText,
-      model_id: "eleven_multilingual_v2", 
+      text: text, // No more aggressive regex punctuation injections that confuse the model
+      model_id: "eleven_v3", // UPGRADED: Fixes the random language/Japanese switching bug and understands expressions like (giggles)
       voice_settings: {
-        stability: 0.40,         // Lowered to introduce fluid voice pitch and expression variance
+        stability: 0.35,         // Dynamic pitch expression 
         similarity_boost: 0.80,  
-        style: 0.35,            // Raised to enhance conversational performance traits
-        use_speaker_boost: false // Turned off to eliminate digital compression/robotic artifacts on phone streams
+        style: 0.45,            // Higher emotional style adherence for laughing/giggling effects
+        use_speaker_boost: false 
       },
     }),
   });
@@ -187,6 +186,7 @@ async function createElevenLabsAudio(text, fileName, options = {}) {
   return `${PUBLIC_BASE_URL}/audio/${fileName}`;
 }
 
+// UPDATED: Custom structured introduction greeting file generator
 async function ensureGreetingAudio() {
   await fs.mkdir(audioDir, { recursive: true });
 
@@ -197,8 +197,9 @@ async function ensureGreetingAudio() {
     await fs.access(fullPath);
     return `${PUBLIC_BASE_URL}/audio/${fileName}`;
   } catch {
+    // Generate your exact newly requested opening script with built-in natural pacing indicators
     return await createElevenLabsAudio(
-      "Hi, Willow AiLi speaking. How can I help today?",
+      "Hi! My name is Willow AiLi from Property Inside Out - personal assistant to Keat Paulin. (giggles) How can I help you today?",
       fileName,
       { cleanupMs: 0 }
     );
@@ -255,7 +256,7 @@ app.all("/webhooks/answer", async (req, res) => {
     res.status(200).json([
       {
         action: "talk",
-        text: "Hi, Willow AiLi speaking. How can I help today?",
+        text: "Hi, Willow AiLi here from Property Inside Out, assistant to Keat Paulin. How can I help today?",
       },
       {
         action: "input",
@@ -297,11 +298,11 @@ app.all("/webhooks/input", async (req, res) => {
       .replace("[EMAIL_KEAT]", "")
       .trim();
 
-    const voiceReply = shortenForVoice(cleanReplyText);
-    console.log("VOICE REPLY:", voiceReply);
+    // We do not run shortenForVoice here anymore if we want to allow OpenAI full creative freedom to output laugh tags
+    console.log("VOICE REPLY:", cleanReplyText);
 
     const fileName = `reply-${Date.now()}.mp3`;
-    const audioUrl = await createElevenLabsAudio(voiceReply, fileName);
+    const audioUrl = await createElevenLabsAudio(cleanReplyText, fileName);
 
     if (shouldForward) {
       console.log("ACTION DETECTED: Forwarding Call to Keat.");
@@ -316,7 +317,7 @@ app.all("/webhooks/input", async (req, res) => {
           endpoint: [
             {
               type: "phone",
-              number: "611800467433", // Change this to your actual cell phone number destination if needed
+              number: "611800467433", 
             },
           ],
         },
