@@ -96,3 +96,31 @@ app.post("/retrieve-memories", async (req, res) => {
     success: true,
     caller_phone: userId,
     retrieved_context: dynamicContext,
+  });
+});
+
+/**
+ * Optional Logging Endpoint to write new facts after a conversation turn completes
+ */
+app.post("/save-memory", async (req, res) => {
+  const userId = req.headers["x-client-phone"] || "default_user";
+  const { user_message, agent_response } = req.body;
+
+  if (!user_message || !agent_response) {
+    return res.status(400).json({ error: "Missing user_message or agent_response parameters" });
+  }
+
+  await addMemory(user_message, agent_response, userId);
+  return res.json({ success: true });
+});
+
+// Basic Root Route to verify server health status
+app.get("/", (req, res) => {
+  res.send("Willo AiLi Processing Engine Online & Operational.");
+});
+
+// Bind server to Render's dynamic port assignment or default local testing port
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Mem0 dynamic data ledger processing engine online via port ${PORT}`);
+});
