@@ -1,103 +1,69 @@
 import express from "express";
-import { MemoryClient } from "mem0ai"; // Official Mem0 Platform Node.js SDK
+import { MemoryClient } from "mem0ai";
 
 const app = express();
 
-// Enable parsing of standard JSON and URL-encoded payloads
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- INITIALIZE MEM0 CLIENT ---
-// Pulls your API key securely from your Render Environment Variables
+// Initialize the Mem0 API connection instance using your dashboard keys
 const mem0 = new MemoryClient({
   apiKey: process.env.MEM0_API_KEY
 });
 
-// Basic health check routes to ensure Render keeps the app active
+// Basic service validation links
 app.get("/", (req, res) => res.status(200).send("live"));
 app.get("/health", (req, res) => res.status(200).send("ok"));
 
-// =========================================================================
-// TOOL 1: RETRIEVE MEMORIES (Called by ElevenLabs at the start of a call)
-// =========================================================================
+// --- CUSTOM TOOL 1: FETCH PROFILE HISTORY BANCS ---
 app.post("/retrieve-memories", async (req, res) => {
   try {
     const { phone_number } = req.body;
-    
     if (!phone_number || phone_number === "unknown") {
-      console.log("Mem0 Retrieval Warning: No caller phone number provided.");
-      return res.status(200).json({ memories: "No prior registration data found." });
+      return res.status(200).json({ memories: "First session connection entry context." });
     }
 
-    console.log(`Searching Mem0 context for phone: ${phone_number}`);
-    
-    // Query Mem0's vector memory cluster for facts tied specifically to this phone number
     const history = await mem0.search({
-      query: "general user profile, client name, and property criteria",
+      query: "general profile information and property selection criteria",
       userId: phone_number
     });
 
     if (history && history.length > 0) {
-      // Flatten the individual extracted bullet point memories into a single string for the AI
       const flattenedFacts = history.map(item => item.memory).join("\n");
-      console.log(`Memories Found:\n${flattenFacts}`);
       return res.status(200).json({ memories: flattenedFacts });
     }
-    
-    console.log("No existing memories found for this caller.");
-    return res.status(200).json({ memories: "First time caller profile. No past history." });
+    return res.status(200).json({ memories: "No past history found." });
   } catch (error) {
-    console.error("Mem0 Retrieval Error:", error);
-    // Gracefully fail back with a safe fallback string so ElevenLabs doesn't crash mid-call
-    return res.status(200).json({ memories: "Error accessing user profile history." });
+    console.error("Retrieval Error:", error);
+    return res.status(200).json({ memories: "Profile extraction timeout error fallback." });
   }
 });
 
-// =========================================================================
-// TOOL 2: ADD MEMORY (Called by ElevenLabs mid-conversation to save facts)
-// =========================================================================
+// --- CUSTOM TOOL 2: SAVE ACTIVE CALL FACT DISCOVERIES ---
 app.post("/add-memory", async (req, res) => {
   try {
     const { phone_number, message } = req.body;
-
     if (!phone_number || !message) {
-      console.log("Mem0 Add Memory Error: Missing required payload properties.");
-      return res.status(200).json({ status: "invalid parameters" });
+      return res.status(200).json({ status: "missing fields" });
     }
 
-    console.log(`Adding new fact to Mem0 for ${phone_number}: "${message}"`);
-
-    // Add the raw statement text. Mem0 automatically runs its background algorithm 
-    // to clean it, check for duplicates, and update existing entries.
     await mem0.add({
       text: message,
       userId: phone_number
     });
-
     return res.status(200).json({ status: "success" });
   } catch (error) {
-    console.error("Mem0 Storage Error:", error);
-    return res.status(200).json({ status: "failed", error: error.message });
+    console.error("Storage Error:", error);
+    return res.status(200).json({ status: "failed" });
   }
 });
 
-// =========================================================================
-// VONAGE GATEWAY: INBOUND CALL ROUTING (Streams raw phone audio)
-// =========================================================================
+// --- VONAGE LIVE VOICE ENTRYPOINT LINK ---
 app.all("/webhooks/answer", (req, res) => {
-  // Vonage issues a standard HTTP request here when your phone number rings.
-  // We extract the caller's phone number securely from Vonage's standard payload.
   const callerId = req.body.from || "unknown";
-  console.log(`Inbound phone call connection request received from: ${callerId}`);
-
-  // Retrieve your ElevenLabs Agent ID from the environment variables
   const agentId = process.env.ELEVENLABS_AGENT_ID;
-  if (!agentId) {
-    console.error("CRITICAL CONFIG ERROR: ELEVENLABS_AGENT_ID environment variable is missing!");
-  }
 
-  // Construct a modern, raw WebSocket streaming response (NCCO) for Vonage.
-  // This pipes the live user phone audio straight to ElevenLabs' Conversational AI backend.
+  // Render NCCO Response Object streaming voice directly over a secure WebSocket pipeline
   res.status(200).json([
     {
       action: "connect",
@@ -107,7 +73,6 @@ app.all("/webhooks/answer", (req, res) => {
           url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`,
           "content-type": "audio/l16;rate=16000",
           headers: {
-            // Forward the phone number as a custom header so ElevenLabs can read it inside tools
             "X-Client-Phone": callerId
           }
         }
@@ -116,15 +81,9 @@ app.all("/webhooks/answer", (req, res) => {
   ]);
 });
 
-// Log metadata tracking events sent by Vonage
 app.all("/webhooks/events", (req, res) => {
   res.status(200).send("ok");
 });
 
-// Start the server instance
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`====================================================`);
-  console.log(`  Smart Voice & Memory Bridge App Live on Port ${port} `);
-  console.log(`====================================================`);
-});
+app.listen(port, () => console.log(`Smart Server online via port ${port}`));
